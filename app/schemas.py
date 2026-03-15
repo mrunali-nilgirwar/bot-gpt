@@ -55,3 +55,8 @@ class ConversationDetailResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- RAG SCHEMAS ---
+class RAGMessageCreate(BaseModel):
+    user_message: str
+    use_rag: bool = True

@@ -1,3 +1,5 @@
+from app.database import get_db
+from app.rag import retrieve_relevant_context
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -183,3 +185,66 @@ def delete_conversation(conversation_id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": "Conversation deleted successfully"}
+
+
+# -----------------------------------------------
+# RAG CHAT - Chat grounded in documents
+# POST /conversations/{id}/rag-messages
+# -----------------------------------------------
+@router.post("/conversations/{conversation_id}/rag-messages", response_model=schemas.MessageResponse)
+def add_rag_message(conversation_id: int, data: schemas.RAGMessageCreate, db: Session = Depends(get_db)):
+    # Check conversation exists
+    conversation = db.query(models.Conversation).filter(
+        models.Conversation.id == conversation_id
+    ).first()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Get relevant context from fake knowledge base
+    context = retrieve_relevant_context(data.user_message)
+
+    # Build the prompt with context
+    if context and data.use_rag:
+        system_prompt = f"""You are a helpful assistant. 
+Use the following context to answer the user's question.
+Only use the context provided. If the answer is not in the context, say you don't know.
+
+Context:
+{context}"""
+    else:
+        system_prompt = "You are a helpful assistant."
+
+    # Get conversation history
+    history = db.query(models.Message).filter(
+        models.Message.conversation_id == conversation_id
+    ).all()
+
+    # Build messages for AI
+    messages = [{"role": "system", "content": system_prompt}]
+    messages += [{"role": m.role, "content": m.content} for m in history]
+    messages.append({"role": "user", "content": data.user_message})
+
+    # Save user message
+    user_message = models.Message(
+        conversation_id=conversation_id,
+        role="user",
+        content=data.user_message
+    )
+    db.add(user_message)
+    db.commit()
+
+    # Call AI with context
+    ai_reply = get_ai_reply(messages)
+
+    # Save AI reply
+    assistant_message = models.Message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=ai_reply
+    )
+    db.add(assistant_message)
+    db.commit()
+    db.refresh(assistant_message)
+
+    return assistant_message
+
