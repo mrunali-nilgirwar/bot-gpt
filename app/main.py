@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from app.database import engine
 from app import models
+from app.routes import router
 
-# This actually CREATES the tables in the database
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+app = FastAPI(title="BOT GPT")
+
+app.include_router(router)
 
 @app.get("/")
 def root():
